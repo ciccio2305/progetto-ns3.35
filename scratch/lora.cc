@@ -172,12 +172,6 @@ class my_lora_header : public Header{
 
 };
 
-/**
- * \brief Test script.
- * 
- * This script 10 lora end-devices, one gateway. Lora end-devices send packets on three channels.
- * 
- */
 class LoraExample 
 {
 public:
@@ -211,6 +205,9 @@ private:
   uint32_t m_bytesRx;
 
   uint32_t packetPerNode;
+  
+  Ptr<LoraNetDevice> *PtrDevice;
+  uint32_t * counterArray;
 
 private:
   /// Create the nodes
@@ -224,7 +221,9 @@ private:
   bool RxPacket (Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address &sender);
   void SendOnePacket (Ptr<LoraNetDevice> dev, uint32_t mode);
 
-  void SendOnePacket2GW (Ptr<LoraNetDevice> dev, uint32_t mode, Address &sender);
+  void SendOnePacket2GW (Ptr<LoraNetDevice> dev, Ptr<Packet> pkt, uint32_t mode, Address &sender);
+
+  uint32_t FindIndex(Ptr<NetDevice> dev);
 
   uint32_t RanTxTime(uint32_t fMin, uint32_t fMax);
   uint32_t random_number(uint32_t min_num, uint32_t max_num);
@@ -247,6 +246,8 @@ LoraExample::LoraExample () :
   totalChannel(3),
   totalTime (100)
 {
+  counterArray = new uint32_t [size];
+  for (size_t i = 0; i < size; i++) counterArray[i] = 0;
 }
 
 bool
@@ -277,12 +278,58 @@ LoraExample::Report (std::ostream &)
 { 
 }
 
+uint32_t
+LoraExample::FindIndex(Ptr<NetDevice> dev)
+{
+  for (size_t i = 0; i < size; i++) {
+    if (PtrDevice[i] == dev) return i;
+  }
+  return size;
+}
 
 bool
 LoraExample::RxPacket (Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address &sender)
 {
-  std::cout << "Received packet at "<< Simulator::Now().GetSeconds() << std::endl;
+  //std::cout << "Received packet at "<< Simulator::Now().GetSeconds() << std::endl;
+  uint32_t index = FindIndex(dev);
+  my_lora_header header;
+  pkt->PeekHeader(header);
   
+ /*
+ header.setSource(0);
+  header.setDestination(6);
+  header.setOriginalSource(0);
+  header.setOriginalDestination(1);
+  header.setId(0);
+  header.setOriginalId(0);
+  */
+  uint64_t dest = header.getDestination();
+  uint64_t originalDest = header.getOriginalDestination();
+  uint64_t src = header.getSource();
+
+  my_lora_header redirectHeader;
+
+  if (dest == index) {
+    std::cout << "dest:" << dest <<", packet for me at: " << Simulator::Now().GetSeconds() << std::endl;
+    
+    if (originalDest != index) {
+
+        redirectHeader.setOriginalSource(header.getOriginalSource());
+        redirectHeader.setOriginalDestination(originalDest);
+        redirectHeader.setOriginalId(header.getOriginalId());
+
+        redirectHeader.setSource(index);
+
+        if (src == index - 1) redirectHeader.setDestination(index + 1);
+        else redirectHeader.setDestination(index - 1);
+
+        redirectHeader.setId(counterArray[index]++);
+        Ptr<Packet> redirectPkt = Create<Packet>(100);
+        redirectPkt->AddHeader(redirectHeader);
+        //Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[6], pkt, 0, PtrDevice[1]->GetMac()->GetBroadcast());
+        Simulator::Schedule(Simulator::Now() + MilliSeconds(1), &LoraExample::SendOnePacket2GW, this, PtrDevice[index], redirectPkt, 0, PtrDevice[index]->GetMac()->GetBroadcast());
+    }
+  }
   // std::cout<< "position"<< dev->GetNode()->GetObject("MobilityModel")->GetPosition()<<std::endl;
   m_bytesRx += 1;
   return true;
@@ -296,22 +343,12 @@ LoraExample::SendOnePacket (Ptr<LoraNetDevice> dev, uint32_t mode)
 
 
 void
-LoraExample::SendOnePacket2GW (Ptr<LoraNetDevice> dev, uint32_t mode, Address &sender)
+LoraExample::SendOnePacket2GW (Ptr<LoraNetDevice> dev, Ptr<Packet> pkt, uint32_t mode, Address &sender)
 {
-  Ptr<Packet> pkt = Create<Packet> (100);
-  my_lora_header header;
-
-  header.setSource(0);
-  header.setDestination(1);
-  header.setOriginalSource(0);
-  header.setOriginalDestination(1);
-  header.setId(0);
-  header.setOriginalId(0);
-
-  pkt->AddHeader(header);
-  std::cout << "Sending packet from " << header.getSource() << " to " << header.getDestination() << std::endl;
   dev->Send (pkt, sender, mode);
-
+  my_lora_header header;
+  pkt->PeekHeader(header);
+  std::cout << "from: "<< header.getSource() << " to: " << header.getDestination() << " sending packet at time: " << Simulator::Now().GetSeconds() << std::endl;
 }
 
 
@@ -402,11 +439,11 @@ LoraExample::DoOneExample (Ptr<LoraPropModel> prop)
   Ptr<LoraNetDevice> gw0 = CreateGateway (Vector (50,50,50), channel);
 
 //Set positions to nodes
-  uint32_t x = 50; uint32_t y = 50; uint32_t z = 50; 
-  uint32_t n = 10; 
+  uint32_t x = 50; uint32_t y = 50; uint32_t z = 50;  
 
-  Ptr<LoraNetDevice> PtrDevice[n];
-  for (uint32_t i = 0; i < n; i++)
+  PtrDevice = new Ptr<LoraNetDevice>[size];
+
+  for (uint32_t i = 0; i < size; i++)
   {
       PtrDevice[i] = CreateNode (Vector (x,y,z), channel);
       x += 0; y += 1000; z += 0;
@@ -418,8 +455,18 @@ LoraExample::DoOneExample (Ptr<LoraPropModel> prop)
 //Set gateway to receive packets from end devices node.
   gw0->SetReceiveCallback (MakeCallback (&LoraExample::RxPacket, this));
 
-  Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[0],0, PtrDevice[1]->GetMac()->GetBroadcast());
-  Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[4],1, PtrDevice[1]->GetMac()->GetBroadcast());
+  Ptr<Packet> pkt = Create<Packet>(100);
+  my_lora_header header;
+  header.setId(counterArray[6]++);
+  header.setOriginalSource(6);
+  header.setSource(6);
+  header.setDestination(5);
+  header.setOriginalDestination(0);
+  header.setOriginalId(header.getId());
+
+  pkt->AddHeader(header);
+  Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[6], pkt, 0, PtrDevice[1]->GetMac()->GetBroadcast());
+  
   m_bytesRx = 0;
   Simulator::Stop (Days(100));
   Simulator::Run ();
