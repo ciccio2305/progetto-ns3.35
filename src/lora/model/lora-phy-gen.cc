@@ -517,7 +517,7 @@ LoraPhyGen::EnergyDepletionHandler ()
 void
 LoraPhyGen::SendPacket (Ptr<Packet> pkt, uint32_t modeNum)
 {
-  std::cout << "LoraPhyGen::SendPacket" << std::endl;
+  //std::cout << "LoraPhyGen::SendPacket" << std::endl;
   
   NS_LOG_DEBUG ("PHY " << m_mac->GetAddress () << ": Transmitting packet");
   if (m_disabled)
@@ -539,12 +539,27 @@ LoraPhyGen::SendPacket (Ptr<Packet> pkt, uint32_t modeNum)
 
   LoraTxMode txMode = GetMode (modeNum);
 
-  if (m_pktRx != 0)
+  
+typedef std::vector<std::pair<Ptr<LoraNetDevice>, Ptr<LoraTransducer> > > LoraDeviceList;
+  LoraDeviceList::const_iterator i =  m_transducer->GetChannel()->m_devList.begin ();
+  for (; i != m_channel->m_devList.end (); i++)
+    {
+      if (m_transducer != i->second){
+        if(i->second->IsTx()){
+          //std::cout<<"aspetto"<<std::endl;
+          Simulator::Schedule(Seconds(0.2),&LoraPhyGen::SendPacket,this,pkt,modeNum);
+          return;  
+        }
+
+      }
+    
+    }
+    
+    if (m_pktRx != 0)
     {
       m_minRxSinrDb = -1e30;
       m_pktRx = 0;
     }
-
   m_transducer->Transmit (Ptr<LoraPhy> (this), pkt, m_txPwrDb, txMode);
   m_state = TX;
   UpdatePowerConsumption (TX);

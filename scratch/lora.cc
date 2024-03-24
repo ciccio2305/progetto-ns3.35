@@ -48,96 +48,150 @@
 #include <cmath>
 
 using namespace ns3;
+struct MY_msg {
+  uint32_t type;
+  uint32_t source;
+  uint32_t destination;
+  uint32_t original_source;
+  uint32_t original_destination;
+  uint32_t id;
+  uint32_t original_id;
+};
+
+void set_msg(MY_msg *m,uint32_t t, uint32_t s, uint32_t d, uint32_t os, uint32_t od, uint32_t i, uint32_t oi){
+  
+  m->type = t;
+  m->source = s;
+  m->destination = d;
+  m->original_source = os;
+  m->original_destination = od;
+  m->id = i;
+  m->original_id = oi;
+
+}
+
+typedef std::vector< MY_msg > my_list;
 
 class my_lora_header : public Header{ 
 
   private:
-    
-    uint64_t source;
-    uint64_t destination;
-    uint64_t original_source;
-    uint64_t original_destination;
+    //type 0 classic message, 1 ack
+    uint32_t type;
+    uint32_t source;
+    uint32_t destination;
+    uint32_t original_source;
+    uint32_t original_destination;
 
-    uint64_t id;
-    uint64_t original_id;
-  
+    uint32_t id;
+    uint32_t original_id;
   public:
 
     my_lora_header()
-      : source (0),
+      : type (0),
+        source (0),
         destination (0),
         original_source (0),
         original_destination (0),
         id (0),
-        original_id (0) 
-        {}
+        original_id (255) 
+        {
+          
+        }
+    //set in order: type, source, destination, original_source, original_destination, id, original_id
+    void set_all(uint32_t t,uint32_t s, uint32_t d, uint32_t os, uint32_t od, uint32_t i, uint32_t oi){
+      
+      type = t;
+      source = s;
+      destination = d;
+      original_source = os;
+      original_destination = od;
+      id = i;
+      original_id = oi;
 
 
-    void setSource(uint64_t s){
+    }
+    
+    void setSource(uint32_t s){
       source = s;
     }
-    void setDestination(uint64_t d){
+    
+    void setType(uint32_t t){
+      type = t;
+    }
+
+    void setDestination(uint32_t d){
       destination = d;
     }
-    void setOriginalSource(uint64_t os){
+    
+    void setOriginalSource(uint32_t os){
       original_source = os;
     }
-    void setOriginalDestination(uint64_t od){
+    
+    void setOriginalDestination(uint32_t od){
       original_destination = od;
     }
-    void setId(uint64_t i){
+    
+    void setId(uint32_t i){
       id = i;
     }
-    void setOriginalId(uint64_t oi){
+    
+    void setOriginalId(uint32_t oi){
       original_id = oi;
     }
 
-    uint64_t getSource(){
+    uint32_t getSource(){
       return source;
     }
-    uint64_t getDestination(){
+    
+    uint32_t getDestination(){
       return destination;
     }
-    uint64_t getOriginalSource(){
+    
+    uint32_t getOriginalSource(){
       return original_source;
     }
-    uint64_t getOriginalDestination(){
+    
+    uint32_t getOriginalDestination(){
       return original_destination;
     }
-    uint64_t getId(){
+    
+    uint32_t getId(){
       return id;
     }
-    uint64_t getOriginalId(){
+    
+    uint32_t getOriginalId(){
       return original_id;
     }
 
-
     uint32_t GetSerializedSize (void) const{
-      return 48;
+      return 28;
     }
 
+    uint32_t GetType () {
+      return type;
+    }
 
   void Serialize (Buffer::Iterator start) const{
     Buffer::Iterator i = start;
-
-    i.WriteHtonU64 (source);
-    i.WriteHtonU64 (destination);
-    i.WriteHtonU64 (original_source);
-    i.WriteHtonU64 (original_destination);
-    i.WriteHtonU64 (id);
-    i.WriteHtonU64 (original_id);
+    i.WriteHtonU32 (type);
+    i.WriteHtonU32 (source);
+    i.WriteHtonU32 (destination);
+    i.WriteHtonU32 (original_source);
+    i.WriteHtonU32 (original_destination);
+    i.WriteHtonU32 (id);
+    i.WriteHtonU32 (original_id);
 
   }
 
   uint32_t Deserialize (Buffer::Iterator start) {
     Buffer::Iterator i = start;
-    
-    source = i.ReadNtohU64 ();
-    destination = i.ReadNtohU64 ();
-    original_source = i.ReadNtohU64 ();
-    original_destination = i.ReadNtohU64 ();
-    id = i.ReadNtohU64 ();
-    original_id = i.ReadNtohU64 ();
+    type = i.ReadNtohU32 ();
+    source = i.ReadNtohU32 ();
+    destination = i.ReadNtohU32 ();
+    original_source = i.ReadNtohU32 ();
+    original_destination = i.ReadNtohU32 ();
+    id = i.ReadNtohU32 ();
+    original_id = i.ReadNtohU32 ();
     
     return GetSerializedSize ();
   } 
@@ -158,7 +212,8 @@ class my_lora_header : public Header{
   }
 
   void Print (std::ostream &os)const {
-    os << "source: " << source << std::endl
+    os <<"type: "<< type << std::endl
+    << "source: " << source << std::endl
     << " destination: " << destination << std::endl
     << " original_source: " << original_source << std::endl
     << " original_destination: " << original_destination << std::endl
@@ -207,7 +262,16 @@ private:
   uint32_t packetPerNode;
   
   Ptr<LoraNetDevice> *PtrDevice;
+  my_list* msgs_queues;
+
   uint32_t * counterArray;
+
+  uint32_t counter_msg_reinoltro;
+  uint32_t counter_msg_ricevuti_dal_oi;
+  uint32_t counter_ack;
+  uint32_t counter_msg_inviati;
+  uint32_t counter_msg_ricevuti_dal_destinatario;
+
 
 private:
   /// Create the nodes
@@ -221,12 +285,42 @@ private:
   bool RxPacket (Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address &sender);
   void SendOnePacket (Ptr<LoraNetDevice> dev, uint32_t mode);
 
-  void SendOnePacket2GW (Ptr<LoraNetDevice> dev, Ptr<Packet> pkt, uint32_t mode, Address &sender);
+  void SendOnePacket2GW (Ptr<LoraNetDevice> dev, MY_msg pkt, uint32_t mode, Address &sender);
 
   uint32_t FindIndex(Ptr<NetDevice> dev);
 
   uint32_t RanTxTime(uint32_t fMin, uint32_t fMax);
   uint32_t random_number(uint32_t min_num, uint32_t max_num);
+
+  void add_msg_in_queue(MY_msg m,uint32_t node_index){
+    msgs_queues[node_index].push_back(m);
+  }
+
+  void remove_msg_from_queue(uint32_t id, uint32_t node_index){
+    my_list::iterator it; 
+     for (it = msgs_queues[node_index].begin(); it != msgs_queues[node_index].end(); it++ ) {
+      if (it->id == id) {
+        msgs_queues[node_index].erase(it);
+        break;
+      }
+    }
+  }
+
+  void check_queue(MY_msg m, uint32_t node_index){
+    my_list::iterator it; 
+    for (it = msgs_queues[node_index].begin(); it != msgs_queues[node_index].end(); it++ ) {
+      
+      if (it->id == m.id) {
+        std::cout << "messaggio non ricevuto dal destinatario finale"<<std::endl<<"al tempo :"<<Simulator::Now().GetSeconds()<<std::endl;
+        msgs_queues[node_index].erase(it);
+        m.id = counterArray[node_index]++;
+        Simulator::Schedule(Seconds(1), &LoraExample::SendOnePacket2GW, this, PtrDevice[node_index], m, 0, PtrDevice[node_index]->GetMac()->GetBroadcast());
+        counter_msg_reinoltro++;
+        return;
+      }
+    }
+  }
+
 };
 
 int main (int argc, char **argv)
@@ -248,6 +342,8 @@ LoraExample::LoraExample () :
 {
   counterArray = new uint32_t [size];
   for (size_t i = 0; i < size; i++) counterArray[i] = 0;
+  msgs_queues =new my_list[size];
+  
 }
 
 bool
@@ -290,50 +386,73 @@ LoraExample::FindIndex(Ptr<NetDevice> dev)
 bool
 LoraExample::RxPacket (Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address &sender)
 {
-  //std::cout << "Received packet at "<< Simulator::Now().GetSeconds() << std::endl;
+  
   uint32_t index = FindIndex(dev);
   my_lora_header header;
   pkt->PeekHeader(header);
   
- /*
- header.setSource(0);
-  header.setDestination(6);
-  header.setOriginalSource(0);
-  header.setOriginalDestination(1);
-  header.setId(0);
-  header.setOriginalId(0);
-  */
-  uint64_t dest = header.getDestination();
-  uint64_t originalDest = header.getOriginalDestination();
-  uint64_t src = header.getSource();
+  uint32_t dest = header.getDestination();
+  uint32_t originalDest = header.getOriginalDestination();
+  uint32_t src = header.getSource();
 
-  my_lora_header redirectHeader;
 
   if (dest == index) {
-    std::cout << "dest:" << dest <<", packet for me at: " << Simulator::Now().GetSeconds() << std::endl;
     
-    if (originalDest != index) {
-
-        redirectHeader.setOriginalSource(header.getOriginalSource());
-        redirectHeader.setOriginalDestination(originalDest);
-        redirectHeader.setOriginalId(header.getOriginalId());
-
-        redirectHeader.setSource(index);
-
-        if (src == index - 1) redirectHeader.setDestination(index + 1);
-        else redirectHeader.setDestination(index - 1);
-
-        redirectHeader.setId(counterArray[index]++);
-        Ptr<Packet> redirectPkt = Create<Packet>(100);
-        redirectPkt->AddHeader(redirectHeader);
-        //Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[6], pkt, 0, PtrDevice[1]->GetMac()->GetBroadcast());
-        Simulator::Schedule(Simulator::Now() + MilliSeconds(1), &LoraExample::SendOnePacket2GW, this, PtrDevice[index], redirectPkt, 0, PtrDevice[index]->GetMac()->GetBroadcast());
+    if(header.GetType() == 1&&header.getOriginalDestination() == index){
+      counter_ack++;
+      remove_msg_from_queue(header.getOriginalId(),index);
     }
+
+    if(header.GetType() == 0){
+      MY_msg m_ack;
+      
+      set_msg(&m_ack,1, 
+        index, 
+        header.getSource(), 
+        index, 
+        header.getSource(), 
+        counterArray[index]++, 
+        header.getId()
+      );
+      
+      Simulator::Schedule(Seconds(0.1), &LoraExample::SendOnePacket2GW, this, PtrDevice[index], m_ack, mode, PtrDevice[index]->GetMac()->GetBroadcast());
+    
+    }
+
+    //se non sono il destinatario finale reinoltro il messaggio
+    if (originalDest != index && header.GetType() == 0) {
+        counter_msg_ricevuti_dal_destinatario++;
+        uint32_t dest=0;
+        if (src == index - 1) dest=index + 1;
+          else dest=index - 1;
+
+        MY_msg m_reinoltro;
+        
+        set_msg(&m_reinoltro,0,
+          index, 
+          dest, 
+          header.getOriginalSource(), 
+          header.getOriginalDestination(), 
+          counterArray[index]++, 
+          header.getOriginalId()
+        );
+          
+        Simulator::Schedule(Seconds(3.7), &LoraExample::SendOnePacket2GW, this, PtrDevice[index], m_reinoltro, mode, PtrDevice[index]->GetMac()->GetBroadcast());
+    }
+
+     if (originalDest == index&& header.GetType() == 0){
+      std::cout << "messaggio arrivato al gateway"<<std::endl<<"al tempo :"<<Simulator::Now().GetSeconds()<<std::endl;
+      counter_msg_ricevuti_dal_oi++;
+     }
+
+    //se il messaggio era era mer e non era un ack invio l'ack di risposta
+    
+
   }
-  // std::cout<< "position"<< dev->GetNode()->GetObject("MobilityModel")->GetPosition()<<std::endl;
   m_bytesRx += 1;
   return true;
 }
+
 void
 LoraExample::SendOnePacket (Ptr<LoraNetDevice> dev, uint32_t mode)
 {
@@ -343,12 +462,28 @@ LoraExample::SendOnePacket (Ptr<LoraNetDevice> dev, uint32_t mode)
 
 
 void
-LoraExample::SendOnePacket2GW (Ptr<LoraNetDevice> dev, Ptr<Packet> pkt, uint32_t mode, Address &sender)
-{
-  dev->Send (pkt, sender, mode);
+LoraExample::SendOnePacket2GW (Ptr<LoraNetDevice> dev, MY_msg pkt, uint32_t mode, Address &sender)
+{ 
+  
+  counter_msg_inviati++;
+  Ptr<Packet> pkt2 = Create<Packet>(100);
   my_lora_header header;
-  pkt->PeekHeader(header);
-  std::cout << "from: "<< header.getSource() << " to: " << header.getDestination() << " sending packet at time: " << Simulator::Now().GetSeconds() << std::endl;
+  header.set_all(
+    pkt.type,
+    pkt.source, 
+    pkt.destination, 
+    pkt.original_source, 
+    pkt.original_destination, 
+    pkt.id, 
+    pkt.original_id);
+  
+  pkt2->AddHeader(header);
+  dev->Send (pkt2, sender, mode);
+  
+  if(pkt.type == 0){
+    this->add_msg_in_queue(pkt,pkt.source);
+    Simulator::Schedule(Seconds(30), &LoraExample::check_queue, this, pkt,pkt.source);
+  }
 }
 
 
@@ -446,29 +581,36 @@ LoraExample::DoOneExample (Ptr<LoraPropModel> prop)
   for (uint32_t i = 0; i < size; i++)
   {
       PtrDevice[i] = CreateNode (Vector (x,y,z), channel);
-      x += 0; y += 1000; z += 0;
+      x += 0; y += 8; z += 0;
 
       PtrDevice[i]->SetGWAddress(gw0->GetAddress()); 
       PtrDevice[i]->SetReceiveCallback (MakeCallback (&LoraExample::RxPacket, this));             
   }
 
-//Set gateway to receive packets from end devices node.
+
   gw0->SetReceiveCallback (MakeCallback (&LoraExample::RxPacket, this));
 
-  Ptr<Packet> pkt = Create<Packet>(100);
-  my_lora_header header;
-  header.setId(counterArray[6]++);
-  header.setOriginalSource(6);
-  header.setSource(6);
-  header.setDestination(5);
-  header.setOriginalDestination(0);
-  header.setOriginalId(header.getId());
-
-  pkt->AddHeader(header);
-  Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[6], pkt, 0, PtrDevice[1]->GetMac()->GetBroadcast());
+  uint32_t id=counterArray[6]++;
+  MY_msg m;
   
+  set_msg(&m,0, 6, 5, 6, 0, id, id);
+  Simulator::Schedule (Seconds(10), &LoraExample::SendOnePacket2GW, this, PtrDevice[6], m, 0, PtrDevice[6]->GetMac()->GetBroadcast());
+  
+  id=counterArray[7]++;
+  MY_msg m2;
+  set_msg(&m2,0, 7, 6, 7, 0, id, id);
+  Simulator::Schedule (Seconds(11), &LoraExample::SendOnePacket2GW, this, PtrDevice[7], m2, 1, PtrDevice[1]->GetMac()->GetBroadcast());
+  
+
+
+  counter_ack = 0;
+  counter_msg_reinoltro = 0;
+  counter_msg_ricevuti_dal_oi = 0;
+  counter_msg_ricevuti_dal_destinatario = 0;
+  counter_msg_inviati = 0;
+
   m_bytesRx = 0;
-  Simulator::Stop (Days(100));
+  Simulator::Stop (Seconds(20000));
   Simulator::Run ();
   Simulator::Destroy ();
 
@@ -492,9 +634,9 @@ LoraExample::DoExamples ()
 
   Ptr<LoraPropModelThorp> prop = CreateObject<LoraPropModelThorp> ();
 
-  LoraTxMode mode00 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 100, 120, 10000, 125, 2, "TestMode00");
-  LoraTxMode mode01 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 100, 120, 11000, 100, 2, "TestMode01");
-  LoraTxMode mode02 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 300, 120, 12000, 125, 2, "TestMode02");
+  LoraTxMode mode00 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 300, 120, 8681, 100, 2, "TestMode00");
+  LoraTxMode mode01 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 300, 120, 8682, 100, 2, "TestMode01");
+  LoraTxMode mode02 = LoraTxModeFactory::CreateMode (LoraTxMode::LORA, 300, 120, 8683, 100, 2, "TestMode02");
 
   LoraModesList m0;
   m0.AppendMode (mode00);
@@ -512,7 +654,13 @@ LoraExample::DoExamples ()
 
   uint32_t n_ReceivedPacket = DoOneExample(prop);
   
-  std::cout << "Received " << n_ReceivedPacket << " packets\n";
+  std::cout << " Received packets: " << n_ReceivedPacket <<std::endl<<
+    " Ack ricevute: " << counter_ack <<std::endl<<
+    " Msg reinoltro: " << counter_msg_reinoltro <<std::endl<<
+    " Msg ricevuti dal final: " << counter_msg_ricevuti_dal_oi <<std::endl<<
+    " Msg inviati: " << counter_msg_inviati <<std::endl<<
+    " Msg ricevuti dal destinatario intermedio per il reinoltro: " << counter_msg_ricevuti_dal_destinatario 
+    << std::endl;
 
   return false;
 }

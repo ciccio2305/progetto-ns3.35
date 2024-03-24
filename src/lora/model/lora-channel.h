@@ -211,9 +211,9 @@ public:
    */
   Time GetDelay (void);
 
-
+LoraDeviceList m_devList;     //!< The list of devices on this channel.
 private:
-  LoraDeviceList m_devList;     //!< The list of devices on this channel.
+  
   Ptr<LoraPropModel> m_prop;    //!< The propagation model.
   Ptr<LoraNoiseModel> m_noise;  //!< The noise model.
   /** Has Clear ever been called on the channel. */
